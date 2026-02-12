@@ -1,0 +1,16 @@
+# Core
+Django==4.2.9
+djangorestframework==3.14.0
+
+# Database
+psycopg2-binary
+
+# Environment & config
+python-dotenv==1.0.1
+
+# Utilities
+pytz==2024.1
+python-dateutil==2.8.2
+
+# Server (dev / prod)
+gunicorn==21.2.0
