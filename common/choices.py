@@ -1,0 +1,1 @@
+status_choices = ['ACTIVE','INACTIVE','DELETED']
