@@ -4,9 +4,9 @@
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import status
-from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from common.response import success_response, error_response
 from .models import Book, Account, Category, PaymentMode, Transaction
 from .serializers import (
     BookSerializer,
@@ -38,7 +38,7 @@ class PullView(APIView):
     def get(self, request):
         device_id = (request.query_params.get("device_id") or "").strip()
         if not device_id:
-            return Response({"error": "device_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response("device_id is required", status.HTTP_400_BAD_REQUEST)
 
         since = parse_dt(request.query_params.get("since"))
 
@@ -68,14 +68,15 @@ class PullView(APIView):
             transactions = transactions.filter(updated_at__gt=since)
         transactions = TransactionSerializer(transactions, many=True).data
 
-        return Response({
+        data = {
             "books": books,
             "accounts": accounts,
             "categories": categories,
             "payment_modes": payment_modes,
             "transactions": transactions,
             "server_time": timezone.now().isoformat(),
-        })
+        }
+        return success_response(data, 200)
 
 
 def upsert_list(model, records, device_id, serializer_class, errors_out=None):
@@ -143,11 +144,11 @@ class PushView(APIView):
     def post(self, request):
         body = request.data
         if not isinstance(body, dict):
-            return Response({"error": "Body must be JSON object"}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response("Body must be JSON object", status.HTTP_400_BAD_REQUEST)
 
         device_id = (body.get("device_id") or "").strip()
         if not device_id:
-            return Response({"error": "device_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response("device_id is required", status.HTTP_400_BAD_REQUEST)
 
         books = body.get("books") or []
         accounts = body.get("accounts") or []
@@ -173,8 +174,8 @@ class PushView(APIView):
         upsert_list(PaymentMode, payment_modes, device_id, PaymentModeSerializer, all_errors.setdefault("payment_modes", []))
         upsert_list(Transaction, transactions, device_id, TransactionSerializer, all_errors.setdefault("transactions", []))
 
-        resp = {"ok": True}
+        data = {"ok": True}
         if any(all_errors.values()):
-            resp["errors"] = {k: v for k, v in all_errors.items() if v}
-        return Response(resp)
+            data["errors"] = {k: v for k, v in all_errors.items() if v}
+        return success_response(data, 200)
 
