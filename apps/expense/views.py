@@ -82,8 +82,9 @@ class PullView(APIView):
 def upsert_list(model, records, device_id, serializer_class, errors_out=None):
     """
     For each record: validate, then create or update.
-    - If record has `id`: upsert by device_id + id (newer updated_at wins).
-    - If record has no `id`: always create (new record). Books are processed first so FKs resolve.
+    Incoming payload "id" is treated as app_id (renamed internally).
+    Match is by device_id + app_id only (never by numeric id).
+    New records get app_id from payload; backend never generates UUID.
     """
     if errors_out is None:
         errors_out = []
@@ -91,46 +92,46 @@ def upsert_list(model, records, device_id, serializer_class, errors_out=None):
         if not record or not isinstance(record, dict):
             errors_out.append({"index": idx, "error": "empty or invalid record"})
             continue
-        ser = serializer_class(data=record)
+        # Treat incoming "id" as app_id: rename before validation
+        payload = dict(record)
+        if "id" in payload:
+            payload["app_id"] = payload.pop("id")
+        ser = serializer_class(data=payload, context={"device_id": device_id})
         if not ser.is_valid():
             errors_out.append({"index": idx, "errors": ser.errors})
             continue
         data = dict(ser.validated_data)
-        rid = data.get("id")
-
-        if rid is not None:
-            # Upsert: need updated_at to compare
-            new_updated = data.get("updated_at")
-            if new_updated is None:
-                errors_out.append({"index": idx, "error": "updated_at is required when id is provided"})
+        payload_app_id = data.get("app_id")
+        if payload_app_id is None:
+            errors_out.append({"index": idx, "error": "id (app_id) is required"})
+            continue
+        # updated_at required for conflict resolution
+        new_updated = data.get("updated_at")
+        if new_updated is None:
+            errors_out.append({"index": idx, "error": "updated_at is required"})
+            continue
+        new_updated = parse_dt(new_updated)
+        if new_updated is None:
+            errors_out.append({"index": idx, "error": "updated_at must be a valid ISO datetime"})
+            continue
+        # Match by device_id + app_id only (never numeric id)
+        existing = model.objects.filter(device_id=device_id, app_id=payload_app_id).first()
+        if existing:
+            old_updated = existing.updated_at
+            if timezone.is_naive(old_updated):
+                old_updated = timezone.make_aware(old_updated)
+            if new_updated < old_updated:
                 continue
-            new_updated = parse_dt(new_updated)
-            if new_updated is None:
-                errors_out.append({"index": idx, "error": "updated_at must be a valid ISO datetime"})
-                continue
-            existing = model.objects.filter(device_id=device_id, id=rid).first()
-            if existing:
-                old_updated = existing.updated_at
-                if timezone.is_naive(old_updated):
-                    old_updated = timezone.make_aware(old_updated)
-                if new_updated < old_updated:
-                    continue
-                for key, val in data.items():
-                    if key != "id":
-                        setattr(existing, key, val)
-                existing.updated_at = new_updated
-                existing.save()
-            else:
-                data["device_id"] = device_id
-                data["updated_at"] = new_updated
-                if data.get("created_at") is None:
-                    data["created_at"] = new_updated
-                model.objects.create(**data)
+            for key, val in data.items():
+                if key not in ("id", "app_id"):
+                    setattr(existing, key, val)
+            existing.updated_at = new_updated
+            existing.save()
         else:
-            # New record (no id): always create. Django will assign id.
+            # Create: set app_id from payload; do not generate UUID
             data.pop("id", None)
             data["device_id"] = device_id
-            new_updated = parse_dt(data.get("updated_at")) or timezone.now()
+            data["app_id"] = payload_app_id
             data["updated_at"] = new_updated
             if data.get("created_at") is None:
                 data["created_at"] = new_updated
