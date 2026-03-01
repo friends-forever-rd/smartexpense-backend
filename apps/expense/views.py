@@ -1,6 +1,3 @@
-# Pull: GET ?device_id=xxx&since=optional-iso-date
-# Push: POST body with device_id and lists: books, accounts, categories, payment_modes, transactions
-
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import status
@@ -32,6 +29,18 @@ def parse_dt(value):
 
 
 class PullView(APIView):
+    """
+    Download phase: return records for this device updated after a given time.
+
+    - device_id: Mandatory (query). All data is scoped by device_id.
+    - since / last_sync_time: Optional (query). Same meaning; since takes priority
+      if both are present. ISO datetime; only records with updated_at > this value
+      are returned. Omit for full pull.
+    - Identity for sync is (device_id, app_id). Response "id" is app_id (UUID).
+    - Backend never generates UUIDs; ids come from the client.
+    - Response includes server_time for the client to store as last_sync_time.
+    """
+
     authentication_classes = []
     permission_classes = []
 
@@ -40,7 +49,9 @@ class PullView(APIView):
         if not device_id:
             return error_response("device_id is required", status.HTTP_400_BAD_REQUEST)
 
-        since = parse_dt(request.query_params.get("since"))
+        since = parse_dt(
+            request.query_params.get("since") or request.query_params.get("last_sync_time")
+        )
 
         # Get all data for this device (and optionally only rows updated after since)
         books = Book.objects.filter(device_id=device_id)
@@ -117,19 +128,21 @@ def upsert_list(model, records, device_id, serializer_class, errors_out=None):
         # Match by device_id + app_id only (never numeric id)
         existing = model.objects.filter(device_id=device_id, app_id=payload_app_id).first()
         if existing:
+            # Update: do not overwrite device_id from payload
             old_updated = existing.updated_at
             if timezone.is_naive(old_updated):
                 old_updated = timezone.make_aware(old_updated)
             if new_updated < old_updated:
                 continue
             for key, val in data.items():
-                if key not in ("id", "app_id"):
+                if key not in ("id", "app_id", "device_id"):
                     setattr(existing, key, val)
             existing.updated_at = new_updated
             existing.save()
         else:
-            # Create: set app_id from payload; do not generate UUID
+            # Create: set device_id from request (body), not from payload
             data.pop("id", None)
+            data.pop("device_id", None)
             data["device_id"] = device_id
             data["app_id"] = payload_app_id
             data["updated_at"] = new_updated
@@ -139,6 +152,18 @@ def upsert_list(model, records, device_id, serializer_class, errors_out=None):
 
 
 class PushView(APIView):
+    """
+    Upload phase: accept bulk create/update of records for this device.
+
+    - device_id: Mandatory (body). All records are owned by this device; must
+      match the device that created them. Not writable per-record.
+    - id: In payload, "id" is the client-generated UUID (app_id). Backend stores
+      it as app_id and never generates UUIDs for app records.
+    - Identity for sync is (device_id + app_id). Match and upsert use only these.
+    - Conflict resolution: last-write-wins using updated_at. Incoming record
+      is applied only if its updated_at is newer than or equal to the existing one.
+    """
+
     authentication_classes = []
     permission_classes = []
 

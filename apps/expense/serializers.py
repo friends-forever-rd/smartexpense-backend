@@ -10,7 +10,7 @@ class AppIdRelatedField(serializers.Field):
     def __init__(self, model, allow_null=False, **kwargs):
         self.related_model = model
         self.allow_null = allow_null
-        super().__init__(**kwargs)
+        super().__init__(allow_null=allow_null, **kwargs)
 
     def to_representation(self, value):
         return str(value.app_id) if value else None
@@ -36,13 +36,19 @@ def _repr_id_as_app_id(instance, data):
 
 
 class BookSerializer(serializers.ModelSerializer):
+    created_at = serializers.DateTimeField(required=False, allow_null=True)
+    updated_at = serializers.DateTimeField(required=True)
+
     class Meta:
         model = Book
         fields = [
             "app_id", "device_id", "name",
             "created_at", "updated_at", "is_deleted", "status",
         ]
-        extra_kwargs = {"app_id": {"required": False}}
+        extra_kwargs = {
+            "app_id": {"required": False},
+            "device_id": {"read_only": True},
+        }
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -51,6 +57,8 @@ class BookSerializer(serializers.ModelSerializer):
 
 class AccountSerializer(serializers.ModelSerializer):
     book_id = AppIdRelatedField(model=Book)
+    created_at = serializers.DateTimeField(required=False, allow_null=True)
+    updated_at = serializers.DateTimeField(required=True)
 
     class Meta:
         model = Account
@@ -58,7 +66,10 @@ class AccountSerializer(serializers.ModelSerializer):
             "app_id", "device_id", "book_id", "name", "account_type", "currency_code",
             "created_at", "updated_at", "is_deleted", "status",
         ]
-        extra_kwargs = {"app_id": {"required": False}}
+        extra_kwargs = {
+            "app_id": {"required": False},
+            "device_id": {"read_only": True},
+        }
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -68,6 +79,8 @@ class AccountSerializer(serializers.ModelSerializer):
 class CategorySerializer(serializers.ModelSerializer):
     book_id = AppIdRelatedField(model=Book)
     parent_id = AppIdRelatedField(model=Category, allow_null=True)
+    created_at = serializers.DateTimeField(required=False, allow_null=True)
+    updated_at = serializers.DateTimeField(required=True)
 
     class Meta:
         model = Category
@@ -75,7 +88,10 @@ class CategorySerializer(serializers.ModelSerializer):
             "app_id", "device_id", "book_id", "parent_id", "name", "category_type",
             "created_at", "updated_at", "is_deleted", "status",
         ]
-        extra_kwargs = {"app_id": {"required": False}}
+        extra_kwargs = {
+            "app_id": {"required": False},
+            "device_id": {"read_only": True},
+        }
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -84,6 +100,8 @@ class CategorySerializer(serializers.ModelSerializer):
 
 class PaymentModeSerializer(serializers.ModelSerializer):
     book_id = AppIdRelatedField(model=Book)
+    created_at = serializers.DateTimeField(required=False, allow_null=True)
+    updated_at = serializers.DateTimeField(required=True)
 
     class Meta:
         model = PaymentMode
@@ -91,7 +109,10 @@ class PaymentModeSerializer(serializers.ModelSerializer):
             "app_id", "device_id", "book_id", "name",
             "created_at", "updated_at", "is_deleted", "status",
         ]
-        extra_kwargs = {"app_id": {"required": False}}
+        extra_kwargs = {
+            "app_id": {"required": False},
+            "device_id": {"read_only": True},
+        }
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -103,6 +124,8 @@ class TransactionSerializer(serializers.ModelSerializer):
     account_id = AppIdRelatedField(model=Account)
     category_id = AppIdRelatedField(model=Category)
     payment_mode_id = AppIdRelatedField(model=PaymentMode)
+    created_at = serializers.DateTimeField(required=False, allow_null=True)
+    updated_at = serializers.DateTimeField(required=True)
 
     class Meta:
         model = Transaction
@@ -111,7 +134,10 @@ class TransactionSerializer(serializers.ModelSerializer):
             "amount", "transaction_date", "note",
             "created_at", "updated_at", "is_deleted", "status",
         ]
-        extra_kwargs = {"app_id": {"required": False}}
+        extra_kwargs = {
+            "app_id": {"required": False},
+            "device_id": {"read_only": True},
+        }
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
